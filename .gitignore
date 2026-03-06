@@ -1,0 +1,21 @@
+# Streamlit cache
+.streamlit/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Python environments
+venv/
+env/
+ENV/
+*.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
