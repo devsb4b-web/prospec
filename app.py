@@ -7,8 +7,6 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
 
 # Otimizações de performance
 gc.enable()
@@ -254,44 +252,7 @@ def preparar_alvo_positivo(dados: pd.DataFrame) -> pd.Series | None:
     return y_full
 
 
-def treinar_modelo_ia(dados: pd.DataFrame):
-    """
-    Modelo simples de classificação para estimar probabilidade
-    de tabulação "positiva" com base em campanha, DDD, ano/mês, etc.
-    """
-    y = preparar_alvo_positivo(dados)
-    if y is None or y.nunique() < 2:
-        return None, None, None
 
-    features_cat = []
-    for col in ["campanha", "ddd", "ano_pasta", "mes_pasta"]:
-        if col in dados.columns:
-            features_cat.append(col)
-
-    if not features_cat:
-        return None, None, None
-
-    X = dados[features_cat].astype(str).fillna("")
-    X = pd.get_dummies(X, drop_first=True)
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
-
-    modelo = RandomForestClassifier(
-        n_estimators=200,
-        max_depth=None,
-        random_state=42,
-        n_jobs=-1,
-    )
-    modelo.fit(X_train, y_train)
-    score = modelo.score(X_test, y_test)
-
-    importancias = pd.Series(modelo.feature_importances_, index=X.columns).sort_values(
-        ascending=False
-    )
-
-    return modelo, score, importancias
 
 
 def kpi_box(col, titulo, valor, formato="{:,.0f}"):
@@ -828,60 +789,6 @@ def main():
                 "Nenhuma ocorrência das tabulações de follow up positivo "
                 "nos dados filtrados."
             )
-
-    # IA
-    st.markdown("---")
-    st.subheader("IA: Perfis com Maior Probabilidade de Tabulação Positiva")
-
-    if st.checkbox("Treinar/atualizar modelo de IA"):
-        with st.spinner("Treinando modelo..."):
-            modelo, score, importancias = treinar_modelo_ia(dados)
-
-        if modelo is None:
-            st.info(
-                "Não foi possível treinar o modelo com os dados atuais. "
-                "Verifique se existe variedade suficiente de tabulações."
-            )
-        else:
-            st.success(f"Modelo treinado. Acurácia (validação): {score*100:.1f}%")
-
-            st.markdown("""
-            **O que significa a acurácia?**  
-            O modelo foi treinado para prever se uma ligação terá tabulação positiva (ex.: Produtiva, Agendada, Promessa de Abertura, Retorno com Agendamento, etc.). 
-            A acurácia indica a % de previsões corretas em dados que o modelo nunca viu. 
-            Quanto maior, melhor o modelo generaliza.
-            """)
-
-            st.write("**Importância das variáveis (features mais relevantes):**")
-            st.bar_chart(importancias.head(15))
-            st.markdown("""
-            **Por que a importância das variáveis importa?**  
-            Cada barra mostra o quanto aquela característica (campanha, DDD, ano, mês) influencia a previsão. 
-            Variáveis no topo explicam melhor o desempenho: por exemplo, se "ddd_11" ou "campanha_Prospecção" 
-            aparecem em destaque, esses segmentos tendem a ter mais tabulações positivas. Use isso para 
-            priorizar horários, operadores ou estratégias em DDDs/campanhas com menor performance.
-            """)
-
-            if "ddd" in dados.columns:
-                y_full = preparar_alvo_positivo(dados)
-                taxa_por_ddd = (
-                    dados.assign(_y=y_full)
-                    .groupby("ddd")["_y"]
-                    .mean()
-                    .dropna()
-                    .sort_values(ascending=False)
-                    * 100
-                )
-                st.write("**Top DDDs com maior taxa de tabulação positiva (%):**")
-                st.dataframe(taxa_por_ddd.round(1))
-                st.markdown("""
-                **O que esse ranking indica?**  
-                Esta tabela mostra a % real de ligações positivas por DDD (considerando todas as tabulações 
-                positivas: Produtiva, Agendada, Promessa de Abertura, Retorno com Agendamento, etc.). 
-                DDDs no topo convertem melhor; os do final merecem análise para entender barreiras 
-                (horário, perfil do público, abordagem) e testar melhorias.
-                """)
-
 
 if __name__ == "__main__":
     main()
