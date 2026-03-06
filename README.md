@@ -39,6 +39,7 @@ Aplicação Streamlit para análise e visualização de dados de campanhas de di
 
 - ✔️ `requirements.txt` - Dependências com versões pinadas
 - ✔️ `.streamlit/config.toml` - Configurações do Streamlit otimizadas
+- ✔️ `runtime.txt` - Python 3.11 (compatível com Streamlit Cloud)
 - ✔️ `.gitignore` - Arquivos a ignorar no Git
 
 ### 📁 Estrutura de Dados
@@ -58,13 +59,29 @@ Ocorrências URA/Fevereiro/*.csv
 - Timeout: 1 hora por sessão
 - Cache automático com `@st.cache_data`
 
+### ⚠️ Otimizações para Evitar Timeout
+
+A aplicação foi otimizada para:
+- ✅ Carregar apenas os 100 arquivos CSV mais recentes
+- ✅ Pular arquivos vazios automaticamente
+- ✅ Usar tipos de dados eficientes em memória
+- ✅ Feedback visual (spinner) enquanto carrega
+
+**Se ainda tiver problemas de carregamento:**
+
+1. **Primeira execução:** A primeira inicialização pode levar até 5 minutos (Streamlit Cloud precisa compilar tudo)
+2. **Recarregar página:** Pressione `R` na página para limpar cache
+3. **Aguardar mais:** Streamlit Cloud está processando — não feche a página
+4. **Verificar erro:** Abra o Developer Console (F12) e veja se há mensagens de erro no Network
+
 ### 📊 Funcionalidades
 
 - Análise por campanha e DDD
 - Heatmap de desempenho
 - Ranking de operadores
-- Predicção com Machine Learning
+- Predicção com Machine Learning (Random Forest)
 - Gráficos interativos com Plotly
+- Taxa de tabulação positiva por horário
 
 ### 💡 Dicas
 
@@ -72,7 +89,21 @@ Ocorrências URA/Fevereiro/*.csv
 - Clique em "Limpar cache" se os dados não atualizarem
 - O modelo de IA melhora com mais dados históricos
 
+### 🐛 Troubleshooting
+
+| Problema | Solução |
+|----------|---------|
+| App carregando eternamente | Aguarde a primeira inicialização, recarregue (R), ou limpe cache |
+| Erro de MemoryError | Reduzir quantidade de CSVs (máx 100 mais recentes) |
+| Filtros não funcionam | Recarregar página (Ctrl+R) |
+| Gráficos vazios | Verificar se há dados nos filtros selecionados |
+
+### 🔐 Segurança
+
+Não armazene dados sensíveis em variáveis públicas. Use `st.secrets` para chaves de API.
+
 ---
 
-**Versão:** 1.0  
-**Última atualização:** Março 2026
+**Versão:** 1.1  
+**Última atualização:** Março 2026  
+**Status:** ✅ Otimizado para Streamlit Cloud

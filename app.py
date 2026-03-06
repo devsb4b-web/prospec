@@ -1,5 +1,6 @@
 import os
 import glob
+import gc
 from datetime import datetime
 
 import numpy as np
@@ -8,6 +9,10 @@ import plotly.express as px
 import streamlit as st
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
+
+# Otimizações de performance
+gc.enable()
+pd.options.mode.copy_on_write = True
 
 
 st.set_page_config(
@@ -23,17 +28,33 @@ ROOT_DIR = "."  # raiz do workspace (pasta Ocorrências)
 def carregar_csv(path: str) -> pd.DataFrame:
     """
     Lê um CSV de ocorrências em português (como o exemplo de Recadastro)
-    e padroniza os nomes das colunas.
+    e padroniza os nomes das colunas. Otimizado para performance.
     """
     # primeiro tenta UTF-8 (onde os acentos ficam corretos),
     # depois faz fallback para latin1 se der erro
     try:
-        df = pd.read_csv(path, sep=";", encoding="utf-8-sig")
+        df = pd.read_csv(
+            path, 
+            sep=";", 
+            encoding="utf-8-sig",
+            dtype={"Número": str, "Mailing": str, "Operador": str, "Status": str},
+            na_values=['', '-', 'nan']
+        )
     except (UnicodeDecodeError, Exception):
         try:
-            df = pd.read_csv(path, sep=";", encoding="latin1", errors="ignore")
+            df = pd.read_csv(
+                path, 
+                sep=";", 
+                encoding="latin1", 
+                errors="ignore",
+                dtype={"Número": str, "Mailing": str, "Operador": str, "Status": str},
+                na_values=['', '-', 'nan']
+            )
         except Exception:
             return pd.DataFrame()  # retorna vazio se falhar
+
+    if df.empty:
+        return df
 
     df.columns = [c.strip() for c in df.columns]
 
@@ -109,66 +130,84 @@ def carregar_todos_dados() -> pd.DataFrame:
     for pattern in padroes_pasta:
         arquivos.extend(glob.glob(pattern, recursive=True))
 
+    # Limitar a 100 arquivos mais recentes para evitar timeout
+    if len(arquivos) > 100:
+        arquivos = sorted(arquivos, key=os.path.getmtime, reverse=True)[:100]
+
     dfs = []
     for path in arquivos:
-        df = carregar_csv(path)
+        try:
+            df = carregar_csv(path)
+            
+            # Skip arquivos vazios
+            if df.empty or len(df) == 0:
+                continue
 
-        # campanha/canal a partir da parte do caminho que começa com "Ocorrências"
-        partes = os.path.normpath(path).split(os.sep)
-        pasta_campanha = None
-        for p in partes:
-            if p.startswith("Ocorrências"):
-                pasta_campanha = p
-                break
+            # campanha/canal a partir da parte do caminho que começa com "Ocorrências"
+            partes = os.path.normpath(path).split(os.sep)
+            pasta_campanha = None
+            for p in partes:
+                if p.startswith("Ocorrências"):
+                    pasta_campanha = p
+                    break
 
-        # Exemplos de pasta_campanha: "Ocorrências Recadastro", "Ocorrências URA"
-        campanha_tipo = (
-            pasta_campanha.replace("Ocorrências", "").strip()
-            if pasta_campanha
-            else "Desconhecida"
-        )
+            # Exemplos de pasta_campanha: "Ocorrências Recadastro", "Ocorrências URA"
+            campanha_tipo = (
+                pasta_campanha.replace("Ocorrências", "").strip()
+                if pasta_campanha
+                else "Desconhecida"
+            )
 
-        df["campanha"] = campanha_tipo
+            df["campanha"] = campanha_tipo
 
-        # ano / mês a partir do caminho (se existirem)
-        ano = None
-        mes = None
-        for p in partes:
-            if p.isdigit() and len(p) == 4:  # ano
-                ano = p
-            elif p.lower() in [
-                "janeiro",
-                "fevereiro",
-                "marco",
-                "março",
-                "abril",
-                "maio",
-                "junho",
-                "julho",
-                "agosto",
-                "setembro",
-                "outubro",
-                "novembro",
-                "dezembro",
-            ]:
-                mes = p
+            # ano / mês a partir do caminho (se existirem)
+            ano = None
+            mes = None
+            for p in partes:
+                if p.isdigit() and len(p) == 4:  # ano
+                    ano = p
+                elif p.lower() in [
+                    "janeiro",
+                    "fevereiro",
+                    "marco",
+                    "março",
+                    "abril",
+                    "maio",
+                    "junho",
+                    "julho",
+                    "agosto",
+                    "setembro",
+                    "outubro",
+                    "novembro",
+                    "dezembro",
+                ]:
+                    mes = p
 
-        df["ano_pasta"] = ano
-        df["mes_pasta"] = mes
-        df["arquivo_origem"] = os.path.basename(path)
+            df["ano_pasta"] = ano
+            df["mes_pasta"] = mes
+            df["arquivo_origem"] = os.path.basename(path)
 
-        # usar diretamente a Subclassificação como tabulação principal
-        if "subclassificacao" not in df.columns:
-            df["subclassificacao"] = np.nan
+            # usar diretamente a Subclassificação como tabulação principal
+            if "subclassificacao" not in df.columns:
+                df["subclassificacao"] = np.nan
 
-        df["tabulacao"] = df["subclassificacao"].fillna("")
+            df["tabulacao"] = df["subclassificacao"].fillna("")
 
-        dfs.append(df)
+            dfs.append(df)
+        except Exception as e:
+            # Log de erro silencioso para não interromper carregamento
+            continue
 
     if not dfs:
         return pd.DataFrame()
 
-    return pd.concat(dfs, ignore_index=True)
+    # Usar concat mais rápido com ignore_index
+    resultado = pd.concat(dfs, ignore_index=True)
+    
+    # Liberar memória
+    del dfs
+    
+    return resultado
 
 
 def preparar_alvo_positivo(dados: pd.DataFrame) -> pd.Series | None:
@@ -311,9 +350,11 @@ def gerar_resumo_automatico(dados_filtrados: pd.DataFrame, y_pos: pd.Series | No
 
 
 def main():
-    dados = carregar_todos_dados()
-
     st.title("📞 Desempenho de Campanhas de Discagem")
+    
+    # Carregar dados com feedback visual
+    with st.spinner("⏳ Carregando dados dos CSVs... (Isso pode levar alguns minutos na primeira vez)"):
+        dados = carregar_todos_dados()
 
     if dados.empty:
         st.warning(
